@@ -1,16 +1,18 @@
 ---
-title: Ulysses Sequence Parallelism Plus for HF Transformers integration
-tags: training, sequence-parallelism
+title: Arctic Long Sequence Training (ALST) for HF Transformers integration
+tags: training, finetuning, sequence-parallelism, long-sequence
 ---
 
 1. Ulysses Sequence Parallelism for Hugging Face (HF) Transformers implements an efficient way of training on long sequences by employing sequence parallelism and attention head parallelism.
-2. Ulysses Plus enables even longer sequence lengths using a bag of tricks:
+2. Arctic Long Sequence Training (ALST) enables even longer sequence lengths using a bag of tricks:
 - Activation checkpoint offload to CPU
 - Tiled MLP compute
 - Liger-kernel
 - PYTORCH_CUDA_ALLOC_CONF
 
-It enables training on 0.5M long sequences on a single H100 GPU and a 15M-long sequences on LLama-8B on four 8x H100 nodes.
+It enables on LLama-8B training on 500K tokens on a single H100 GPU, 3.7M on a single node, and 15M on Llama-8B using just four nodes.
+
+To learn about this technology please read this paper: [Arctic Long Sequence Training: Scalable And Efficient Training For Multi-Million Token Sequences](https://arxiv.org/abs/2506.13996).
 
 It's already fully integrated into Arctic Training, see [this guide](https://github.com/snowflakedb/ArcticTraining/blob/main/projects/sequence-parallelism/).
 
@@ -136,7 +138,7 @@ $ deepspeed --num_gpus 2 train.py
 3: loss=tensor(10.3818, device='cuda:0', grad_fn=<DivBackward0>)
 ```
 
-This example has been derived from the [UlyssesSP unit test](https://github.com/deepspeedai/DeepSpeed/blob/master/tests/unit/ulysses_plus/test_ulysses_sp_hf.py).
+This example has been derived from the [UlyssesSP unit test](https://github.com/deepspeedai/DeepSpeed/blob/master/tests/unit/ulysses_alst/test_ulysses_sp_hf.py).
 
 Let's study the parts not normally present in the vanilla training loop:
 
@@ -222,7 +224,7 @@ labels   : [1 2 3 4]  [5 6 7 8]
 shiftedl : [2 3 4 5]  [6 7 8 -100]
 ```
 
-## Part 2. Ulysses Plus enables even longer sequence lengths using a bag of tricks
+## Part 2. Arctic Long Sequence Training (ALST) enables even longer sequence lengths using a bag of tricks
 
 ### Tiled loss computation
 
@@ -270,11 +272,11 @@ If your model isn't supported by Liger-kernel you can use our implementation, wh
         return loss
 ```
 
-You can see the full version [here](https://github.com/snowflakedb/ArcticTraining/blob/stas/sp/arctic_training/trainer/sft_trainer.py#L45).
+You can see the full version [here](https://github.com/snowflakedb/ArcticTraining/blob/main/arctic_training/trainer/sft_trainer.py#L45).
 
 ### Tiled MLP computation
 
-If you want to use Tiled MLP computation you'd need to monkey patch the model you work with, for a full example see this [unit test](https://github.com/deepspeedai/DeepSpeed/blob/master/tests/unit/ulysses_plus/test_tiled_compute.py).
+If you want to use Tiled MLP computation you'd need to monkey patch the model you work with, for a full example see this [unit test](https://github.com/deepspeedai/DeepSpeed/blob/master/tests/unit/ulysses_alst/test_tiled_compute.py).
 
 ```python
 from deepspeed.runtime.sequence_parallel.ulysses_sp import TiledMLP
