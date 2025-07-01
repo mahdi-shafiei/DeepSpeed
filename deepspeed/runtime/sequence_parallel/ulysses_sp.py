@@ -3,25 +3,27 @@
 
 # DeepSpeed Team
 """
-*** Ulysses Plus Sequence Parallelism for HF Transformers ***
+*** Arctic Long Sequence Training (ALST) components ***
 
 1. Ulysses Sequence Parallelism for HF Transformers implements an efficient way of training on long sequences by employing sequence parallelism and attention head parallelism.
-2. Ulysses Plus enables even longer sequence lengths using a bag of tricks:
+2. ALST enables even longer sequence lengths using a bag of tricks:
 - Activation checkpoint offload to CPU
 - Tiled MLP compute
 - Liger-kernel
 - PYTORCH_CUDA_ALLOC_CONF
 
-Ulysses Plus features found in this module:
+ALST features found in this module:
 
 - `UlyssesSPAttentionHF` - port of UlyssesAttention from Megatron-Deepspeed plus modern MHA-variations
 - `UlyssesSPDataLoaderAdapter` - DL adapter to shard the normal DL batches to be used by `UlyssesSPAttentionHF`
 - `SequenceTiledCompute` - generic autograd function to perform compute after tiling on the sequence dimension
 - `TiledMLP` - a specific autograd function to perform tiled MLP (it's much easier to understand before trying to grok `SequenceTiledCompute`)
 
-For integration docs see: https://www.deepspeed.ai/tutorials/ulysses-plus-sequence-pallellism
+This module implements Arctic Long Sequence Training: Scalable And Efficient Training For Multi-Million Token Sequences: https://arxiv.org/abs/2506.13996
 
-The other UlyssesPlus features live inside
+For integration docs see: https://www.deepspeed.ai/tutorials/ulysses-alst-sequence-pallellism/
+
+The other ALST features live inside
 https://github.com/snowflakedb/ArcticTraining/blob/main/projects/sequence-parallelism/
 
 """
