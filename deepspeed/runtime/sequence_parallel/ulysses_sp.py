@@ -3,25 +3,27 @@
 
 # DeepSpeed Team
 """
-*** Ulysses Plus Sequence Parallelism for HF Transformers ***
+*** Arctic Long Sequence Training (ALST) components ***
 
 1. Ulysses Sequence Parallelism for HF Transformers implements an efficient way of training on long sequences by employing sequence parallelism and attention head parallelism.
-2. Ulysses Plus enables even longer sequence lengths using a bag of tricks:
+2. ALST enables even longer sequence lengths using a bag of tricks:
 - Activation checkpoint offload to CPU
 - Tiled MLP compute
 - Liger-kernel
 - PYTORCH_CUDA_ALLOC_CONF
 
-Ulysses Plus features found in this module:
+ALST features found in this module:
 
 - `UlyssesSPAttentionHF` - port of UlyssesAttention from Megatron-Deepspeed plus modern MHA-variations
 - `UlyssesSPDataLoaderAdapter` - DL adapter to shard the normal DL batches to be used by `UlyssesSPAttentionHF`
 - `SequenceTiledCompute` - generic autograd function to perform compute after tiling on the sequence dimension
 - `TiledMLP` - a specific autograd function to perform tiled MLP (it's much easier to understand before trying to grok `SequenceTiledCompute`)
 
-For integration docs see: https://www.deepspeed.ai/tutorials/ulysses-plus-sequence-pallellism
+This module implements Arctic Long Sequence Training: Scalable And Efficient Training For Multi-Million Token Sequences: https://arxiv.org/abs/2506.13996
 
-The other UlyssesPlus features live inside
+For integration docs see: https://www.deepspeed.ai/tutorials/ulysses-alst-sequence-pallellism/
+
+The other ALST features live inside
 https://github.com/snowflakedb/ArcticTraining/blob/main/projects/sequence-parallelism/
 
 """
@@ -704,7 +706,7 @@ class SequenceTiledCompute(torch.autograd.Function):
         }
 
         # if seqlen is not exactly divisible by shards the last step will be shorter than shard_step
-        shard_step = kwargs_to_shard_shards[grad_requiring_tensor_key][0].numel()
+        shard_step = kwargs_to_shard_shards[grad_requiring_tensor_key][0].shape[1]
         for i in range(shards):
 
             # when fn involves one or more model weights deepspeed will normally push a grad to
@@ -729,8 +731,8 @@ class SequenceTiledCompute(torch.autograd.Function):
             shard_offset = i * shard_step
             # this will enable gradual population of the pre-allocated
             # `grad_requiring_tensor_shard.grad` during `torch.autograd.backward` calls
-            grad_requiring_tensor_shard.grad = (grad_requiring_tensor_grad.view(-1).narrow(
-                0, shard_offset, grad_requiring_tensor_shard.numel()).view_as(grad_requiring_tensor_shard))
+            grad_requiring_tensor_shard.grad = (grad_requiring_tensor_grad.narrow(
+                1, shard_offset, shard_step).view_as(grad_requiring_tensor_shard))
 
             with torch.enable_grad():
                 output = fn(**kwargs_to_shard_shard, **kwargs_to_pass)
@@ -739,8 +741,8 @@ class SequenceTiledCompute(torch.autograd.Function):
                 # loss use-case
                 torch.autograd.backward(output, incoming_grad)
             else:
-                incoming_grad_shard = (incoming_grad.view(-1).narrow(
-                    0, shard_offset, grad_requiring_tensor_shard.numel()).view_as(grad_requiring_tensor_shard))
+                incoming_grad_shard = (incoming_grad.narrow(1, shard_offset,
+                                                            shard_step).view_as(grad_requiring_tensor_shard))
                 torch.autograd.backward(output, incoming_grad_shard)
 
         # positional args
@@ -834,7 +836,7 @@ class TiledMLP(torch.autograd.Function):
         x_grad = torch.zeros_like(x)
         x_shards = list(torch.chunk(x, chunks=shards, dim=1))
 
-        shard_step = x_shards[0].numel()
+        shard_step = x_shards[0].shape[1]
         for i, x_shard in enumerate(x_shards):
 
             # Tell deepspeed not to add a new grad to its ipg bucket until the last shard is run
@@ -850,8 +852,8 @@ class TiledMLP(torch.autograd.Function):
             x_shard.requires_grad_(x_requires_grad)
 
             shard_offset = i * shard_step
-            x_shard.grad = x_grad.view(-1).narrow(0, shard_offset, x_shard.numel()).view_as(x_shard)
-            incoming_grad_shard = incoming_grad.view(-1).narrow(0, shard_offset, x_shard.numel()).view_as(x_shard)
+            x_shard.grad = x_grad.narrow(1, shard_offset, shard_step).view_as(x_shard)
+            incoming_grad_shard = incoming_grad.narrow(1, shard_offset, shard_step).view_as(x_shard)
             with torch.enable_grad():
                 output = fn(self, x_shard)
             torch.autograd.backward(output, incoming_grad_shard)
@@ -1008,15 +1010,14 @@ class TiledLoss(torch.autograd.Function):
         shift_labels_shards = list(torch.chunk(shift_labels, chunks=shards, dim=1))
 
         # if seqlen is not exactly divisible by shards the last step will be shorter than shard_step
-        shard_step = logits_shards[0].numel()
+        shard_step = logits_shards[0].shape[1]
         for i in range(shards):
             logits_shard = logits_shards.pop(0)
             shift_labels_shard = shift_labels_shards.pop(0)
 
             shard_offset = i * shard_step
             # this will enable gradual population of the pre-allocated `logits_shard.grad` during `torch.autograd.backward` calls
-            logits_shard.grad = (logits_grad.view(-1).narrow(0, shard_offset,
-                                                             logits_shard.numel()).view_as(logits_shard))
+            logits_shard.grad = (logits_grad.narrow(1, shard_offset, shard_step).view_as(logits_shard))
 
             with torch.enable_grad():
                 if all((shift_labels_shard == -100).squeeze()):
